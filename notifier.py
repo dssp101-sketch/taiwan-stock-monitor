@@ -173,7 +173,7 @@ class StockNotifier:
         # --- 6. 寄送 Resend 郵件 ---
         try:
             resend.Emails.send({
-                "from": "StockMonitor <onboarding@resend.dev>",
+                "from": "StockMonitor <notify@yourdomain.com>",
                 "to": "dssp101@gmail.com",
                 "subject": f"🚀 {market_name} 全方位監控報告 - {report_time.split(' ')[0]}",
                 "html": html_content,
