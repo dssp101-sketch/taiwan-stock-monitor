@@ -106,17 +106,71 @@ TradingView 標示有出現、主控台沒有任何錯誤。
   service role key（會繞過 RLS）。`watchlist` 例外，登入者可以自行增刪改。
 - 未登入的 anon 角色沒有任何 policy，讀不到任何一列。
 
+## 資料來源
+
+兩個來源，資料表與指標模組完全共用，欄位對應各自獨立成純函式。
+
+| 來源 | 腳本 | Token | 涵蓋 | 特性 |
+|---|---|---|---|---|
+| **證交所（TWSE）** | `scripts/fetchTwse.js` | 不需要 | 上市 | 第一手、無流量限制、一次給全市場一天 |
+| **FinMind** | `scripts/fetchFinMind.js` | 需要 | 上市＋上櫃 | 介面好用、有免費額度上限、一檔給一段期間 |
+
+證交所是源頭，數字直接對得上官方公告；FinMind 也是從這裡來的。
+上櫃（TPEx）目前只有 FinMind 支援，證交所腳本尚未實作櫃買中心的端點。
+
+### 證交所的欄位與單位（取自實際在爬的開源程式碼，不是憑記憶）
+
+來源：`chunkai1312/node-twstock` 的實作，以及 `voidful/tw-institutional-stocker`
+存下來的證交所原始欄位標題。
+
+| 資料 | 端點 | 單位 |
+|---|---|---|
+| 每日收盤行情 | `/rwd/zh/afterTrading/MI_INDEX` | 成交量是**股**、金額是元 |
+| 三大法人買賣超 | `/rwd/zh/fund/T86` | **股**（欄位標題為「買賣超股數」） |
+| 融資融券餘額 | `/rwd/zh/marginTrading/MI_MARGN` | **張**，本模組一律 ×1000 轉成股 |
+
+三個已經踩過並處理掉的坑：
+
+1. **單位不一致。** 日 K 是股、融資融券是張。同一個來源裡就不一致。
+2. **欄位名稱互相包含。** 「自營商買賣超股數」是「**外資**自營商買賣超股數」的
+   子字串，用 `includes()` 比對會抓錯，讓自營商淨額幾乎全變成 0。
+   本模組一律用欄位位置搭配欄位數量驗證，不做名稱模糊比對。
+3. **三大法人的欄位數量隨年份變動**（17／14／10 欄三種格式），回補歷史時會
+   同時遇到。三種都支援，遇到沒看過的格式**明確報錯**而不是猜著解析。
+
+另外證交所一次回傳多張表，且彙總表常排在個股明細表前面、標題含同樣關鍵字。
+所以 `findTable()` 不寫死索引，也不是取第一個符合的，而是挑「第一列第一格
+看起來像證券代號」的那張表。
+
+### 回補注意事項
+
+證交所的端點是「一次給全市場一天」，所以回補 3 年要跑約 730 個交易日 ×
+3 個資料集 ≈ 2200 次請求，以 3 秒節流計算約 110 分鐘。
+
+腳本會先讀 `data_fetch_log`，**跳過先前已成功的日期**，所以中斷後再跑一次
+就會接續，不會從頭來過。
+
 ## 抓資料腳本
 
 `scripts/fetchFinMind.js`，由 GitHub Actions 每個交易日收盤後執行，也可以在本機手動跑。
 
 ```bash
 cd web
-node scripts/fetchFinMind.js --check                 # 只檢查設定與連線，不寫入
-node scripts/fetchFinMind.js --add=2330,2317,2454    # 加入追蹤池
-node scripts/fetchFinMind.js --mode=backfill --years=3   # 首次回補
-node scripts/fetchFinMind.js --mode=daily --days=7       # 每日更新
+
+# 證交所（不需要 Token）
+node scripts/fetchTwse.js --check
+node scripts/fetchTwse.js --add=2330,2317,2454
+node scripts/fetchTwse.js --mode=backfill --years=3
+node scripts/fetchTwse.js --mode=daily --days=7
+
+# FinMind（需要 FINMIND_TOKEN）
+node scripts/fetchFinMind.js --check
+node scripts/fetchFinMind.js --add=2330,2317,2454
+node scripts/fetchFinMind.js --mode=backfill --years=3
+node scripts/fetchFinMind.js --mode=daily --days=7
 ```
+
+GitHub Actions 的 workflow_dispatch 可以選 `source`（`twse` 或 `finmind`）。
 
 保護機制：每次請求前節流，並讀回 FinMind 實際用量，接近上限就主動停止而不是硬撞。
 每一次抓取成功或失敗都寫進 `data_fetch_log`，之後查得出哪一天缺資料。
@@ -143,9 +197,12 @@ node scripts/fetchFinMind.js --mode=daily --days=7       # 每日更新
 
 ### 尚未確認的事
 
-- **融資融券的單位**：FinMind 官方文件沒有標示 `MarginPurchaseTodayBalance`
-  是「股」還是「張」。抓到真實資料後必須跟證交所公告核對，核對完成前
-  不要拿 `margin` 的欄位做任何評分或跨股票比較。
+- **FinMind 融資融券的單位**：FinMind 官方文件沒有標示
+  `MarginPurchaseTodayBalance` 是「股」還是「張」。
+  已知證交所原始報表的單位是**張**，所以 FinMind 若是原樣轉手，很可能也是張，
+  但這是推論不是查證。用 FinMind 抓完之後，拿同一天同一檔跟 `fetchTwse.js`
+  抓到的結果對一次就知道了——`fetchTwse.js` 已經確定會換算成股。
+  核對完成前，不要拿 FinMind 來源的 `margin` 欄位做任何評分。
 
 ## 環境變數
 

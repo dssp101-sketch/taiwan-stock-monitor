@@ -15,6 +15,14 @@ on:
     - cron: '0 14 * * 1-5'
   workflow_dispatch:
     inputs:
+      source:
+        description: '資料來源'
+        required: true
+        default: 'twse'
+        type: choice
+        options:
+          - twse      # 證交所官方（上市，免 Token，第一手）
+          - finmind   # FinMind（需要 FINMIND_TOKEN）
       mode:
         description: '執行模式'
         required: true
@@ -72,15 +80,23 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
+          SOURCE="${{ github.event.inputs.source || 'twse' }}"
           MODE="${{ github.event.inputs.mode || 'daily' }}"
+
+          case "$SOURCE" in
+            finmind) SCRIPT=scripts/fetchFinMind.js ;;
+            *)       SCRIPT=scripts/fetchTwse.js ;;
+          esac
+          echo "資料來源：$SOURCE（$SCRIPT）／模式：$MODE"
+
           case "$MODE" in
             check)
-              node scripts/fetchFinMind.js --check
+              node "$SCRIPT" --check
               ;;
             backfill)
-              node scripts/fetchFinMind.js --mode=backfill --years="${{ github.event.inputs.years || '3' }}"
+              node "$SCRIPT" --mode=backfill --years="${{ github.event.inputs.years || '3' }}"
               ;;
             *)
-              node scripts/fetchFinMind.js --mode=daily --days="${{ github.event.inputs.days || '7' }}"
+              node "$SCRIPT" --mode=daily --days="${{ github.event.inputs.days || '7' }}"
               ;;
           esac
