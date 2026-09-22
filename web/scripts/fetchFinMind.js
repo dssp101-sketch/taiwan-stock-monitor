@@ -38,15 +38,39 @@ const USAGE_SAFETY_MARGIN = 20
 
 function parseArgs(argv) {
   const args = { mode: null, years: 3, days: 7, add: null, check: false, dryRun: false }
-  for (const raw of argv.slice(2)) {
-    const [key, value] = raw.replace(/^--/, '').split('=')
+  const tokens = argv.slice(2)
+
+  for (let i = 0; i < tokens.length; i++) {
+    const raw = tokens[i]
+    if (!raw.startsWith('--')) continue
+
+    const body = raw.slice(2)
+    const eq = body.indexOf('=')
+
+    const key = eq === -1 ? body : body.slice(0, eq)
+    // 同時支援 --add=2330,2317 與 --add 2330,2317 兩種寫法。
+    // 後者在 npm run ... -- 的情境下很容易出現，不接受的話會安靜地
+    // 變成「加入 0 檔」然後什麼都沒發生。
+    let value = eq === -1 ? undefined : body.slice(eq + 1)
+    if (value === undefined && tokens[i + 1] && !tokens[i + 1].startsWith('--')) {
+      value = tokens[i + 1]
+      i++
+    }
+
     switch (key) {
       case 'check': args.check = true; break
       case 'dry-run': args.dryRun = true; break
       case 'mode': args.mode = value; break
       case 'years': args.years = Number(value); break
       case 'days': args.days = Number(value); break
-      case 'add': args.add = (value ?? '').split(',').map((s) => s.trim()).filter(Boolean); break
+      case 'add': {
+        const ids = (value ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+        if (ids.length === 0) {
+          throw new Error('--add 後面要接股票代號，例如 --add=2330,2317')
+        }
+        args.add = ids
+        break
+      }
       default: throw new Error(`不認得的參數：--${key}`)
     }
   }

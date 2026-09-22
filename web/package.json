@@ -10,7 +10,6 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "twse:check": "node scripts/fetchTwse.js --check",
-    "twse:add": "node scripts/fetchTwse.js --add",
     "twse:daily": "node scripts/fetchTwse.js --mode=daily --days=7",
     "twse:backfill": "node scripts/fetchTwse.js --mode=backfill --years=3",
     "finmind:check": "node scripts/fetchFinMind.js --check",
