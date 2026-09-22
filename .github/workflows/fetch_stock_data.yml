@@ -1,0 +1,86 @@
+# 台股個人分析平台：每個交易日收盤後從 FinMind 抓資料寫進 Supabase。
+#
+# 與 repo 內既有的 daily_report.yml（Python 全球股市監控）是兩個獨立的工作流，
+# 互不影響。
+#
+# 需要在 Settings → Secrets and variables → Actions 設定三個 secret：
+#   FINMIND_TOKEN、SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
+
+name: 台股資料抓取
+
+on:
+  schedule:
+    # 14:00 UTC = 台灣時間 22:00，等證交所把當日法人與融資融券資料都公告完。
+    # 若發現資料還沒更新，把時間往後調。
+    - cron: '0 14 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '執行模式'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - backfill
+          - check
+      days:
+        description: 'daily 模式往回抓幾天'
+        required: false
+        default: '7'
+      years:
+        description: 'backfill 模式往回抓幾年'
+        required: false
+        default: '3'
+
+# 同時只跑一個，避免兩次排程重疊互相覆蓋
+concurrency:
+  group: fetch-stock-data
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    name: 抓取 FinMind 資料
+    runs-on: ubuntu-latest
+    # backfill 抓 3 年 × 多檔股票會很久，給足時間
+    timeout-minutes: 180
+
+    steps:
+      - name: 取出程式碼
+        uses: actions/checkout@v4
+
+      - name: 安裝 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: 安裝相依套件
+        working-directory: web
+        run: npm ci
+
+      - name: 先跑單元測試
+        # 指標或資料對應壞掉時就不要去動資料庫
+        working-directory: web
+        run: npm test
+
+      - name: 執行抓取
+        working-directory: web
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          MODE="${{ github.event.inputs.mode || 'daily' }}"
+          case "$MODE" in
+            check)
+              node scripts/fetchFinMind.js --check
+              ;;
+            backfill)
+              node scripts/fetchFinMind.js --mode=backfill --years="${{ github.event.inputs.years || '3' }}"
+              ;;
+            *)
+              node scripts/fetchFinMind.js --mode=daily --days="${{ github.event.inputs.days || '7' }}"
+              ;;
+          esac

@@ -69,6 +69,47 @@ npm run build           # 產生 dist/
   service role key（會繞過 RLS）。`watchlist` 例外，登入者可以自行增刪改。
 - 未登入的 anon 角色沒有任何 policy，讀不到任何一列。
 
+## 抓資料腳本
+
+`scripts/fetchFinMind.js`，由 GitHub Actions 每個交易日收盤後執行，也可以在本機手動跑。
+
+```bash
+cd web
+node scripts/fetchFinMind.js --check                 # 只檢查設定與連線，不寫入
+node scripts/fetchFinMind.js --add=2330,2317,2454    # 加入追蹤池
+node scripts/fetchFinMind.js --mode=backfill --years=3   # 首次回補
+node scripts/fetchFinMind.js --mode=daily --days=7       # 每日更新
+```
+
+保護機制：每次請求前節流，並讀回 FinMind 實際用量，接近上限就主動停止而不是硬撞。
+每一次抓取成功或失敗都寫進 `data_fetch_log`，之後查得出哪一天缺資料。
+
+### FinMind 欄位對照（取自官方套件原始碼，不是憑記憶）
+
+來源：`FinMind/data/data_loader.py` 的 docstring。
+
+| Dataset | 來源欄位 | 資料庫欄位 |
+|---|---|---|
+| `TaiwanStockInfo` | `stock_id`、`stock_name`、`industry_category`、`type` | `stocks.*` |
+| `TaiwanStockPrice` | `open`、**`max`**、**`min`**、`close`、`Trading_Volume`、`Trading_money` | `daily_prices.*` |
+| `TaiwanStockInstitutionalInvestorsBuySell` | `date`、`stock_id`、`name`、`buy`、`sell`（長表） | `institutional_flows.*`（攤平成寬表） |
+| `TaiwanStockMarginPurchaseShortSale` | `MarginPurchaseTodayBalance`、`ShortSaleTodayBalance` | `margin.*` |
+
+幾個容易寫錯的地方：
+
+- 最高、最低價欄位是 **`max` / `min`**，不是 `high` / `low`。
+- 市場別 `type` 是 **`twse` / `tpex`**，不是中文。資料庫存原始值，中文由前端對照。
+- 三大法人是**長表**，同一檔同一天有多列，靠 `name` 區分類別，共六種：
+  `Foreign_Investor`、`Foreign_Dealer_Self`、`Investment_Trust`、
+  `Dealer_self`、`Dealer_Hedging`、`Dealer`（舊制合併）。六種全部分開存，
+  淨額由資料庫的計算欄位加總，評分卡才能展開看到每一項原始數值。
+
+### 尚未確認的事
+
+- **融資融券的單位**：FinMind 官方文件沒有標示 `MarginPurchaseTodayBalance`
+  是「股」還是「張」。抓到真實資料後必須跟證交所公告核對，核對完成前
+  不要拿 `margin` 的欄位做任何評分或跨股票比較。
+
 ## 環境變數
 
 | 變數 | 放哪裡 | 用途 |
@@ -78,5 +119,8 @@ npm run build           # 產生 dist/
 | `SUPABASE_URL` | Vercel / GitHub Actions | 同上，伺服器端用 |
 | `SUPABASE_SERVICE_ROLE_KEY` | Vercel / GitHub Actions | **祕密**，絕不能進前端 |
 | `FINMIND_TOKEN` | GitHub Actions | **祕密**，絕不能進前端 |
+
+GitHub Actions 的三個 secret 設在 Settings → Secrets and variables → Actions：
+`FINMIND_TOKEN`、`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`。
 
 在 Vercel 設定環境變數時記得勾選 Production。
