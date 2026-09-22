@@ -36,6 +36,29 @@ npm test                # 單元測試
 npm run build           # 產生 dist/
 ```
 
+## 技術指標
+
+`src/indicators/` 底下每個指標都是純函式，不碰資料庫、不碰網路、不改動傳入的陣列。
+
+| 模組 | 內容 | 說明 |
+|---|---|---|
+| `sma.js` | 簡單移動平均 | 每格重算視窗，避免滾動加總的浮點漂移 |
+| `ema.js` | 指數移動平均 | 以前 n 筆簡單平均當種子 |
+| `macd.js` | DIF／MACD／OSC | 預設 12/26/9，訊號線只在 DIF 有值的區段上計算 |
+| `rsi.js` | RSI | Wilder 原始平滑法 |
+| `kd.js` | K／D／RSV | 台灣慣用 9 日與 1/3 平滑，前值以 50 起算 |
+| `bollinger.js` | 布林通道 | 母體標準差（分母 n），另附 bandwidth |
+| `obv.js` | 能量潮 | 成交量單位為股 |
+| `atr.js` | ATR／TR | Wilder 原始平滑法 |
+
+共通約定：
+
+1. 輸出長度一律等於輸入長度。
+2. 資料不足的位置是 `null`，**絕不用 0 或前值填補**。
+3. 遞迴型指標（EMA、RSI、KD、ATR）遇到髒資料會重新尋找種子，不讓髒值汙染後面全部。
+4. 呼叫前先用 `lib/priceSeries.js` 的 `cleanDailyPrices()` 濾掉無成交日（收盤價 0），
+   該函式會回報排除了幾筆，畫面上要誠實顯示，不要默默吃掉。
+
 ## 資料庫
 
 `supabase/migrations/0001_init.sql` 建立 6 張表：
