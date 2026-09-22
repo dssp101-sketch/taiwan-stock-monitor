@@ -23,10 +23,10 @@ $$;
 -- ---------------------------------------------------------------
 -- stocks：股票基本資料
 --
--- market 直接存 FinMind TaiwanStockInfo 的 type 原始值（twse = 上市、
--- tpex = 上櫃，另有興櫃等）。不在資料庫層做中文轉換，也不加 check 約束：
--- 一旦 FinMind 新增沒看過的市場別，加約束會讓整批寫入失敗而遺失資料。
--- 中文顯示由前端的對照表負責，對照不到時直接顯示原始值。
+-- market 存市場別代碼原始值（twse = 上市、tpex = 上櫃，另有興櫃等），
+-- 與 FinMind TaiwanStockInfo 的 type 欄位一致。不在資料庫層做中文轉換，
+-- 也不加 check 約束：一旦出現沒看過的市場別，加約束會讓整批寫入失敗
+-- 而遺失資料。中文顯示由前端的對照表負責，對照不到時直接顯示原始值。
 -- ---------------------------------------------------------------
 create table stocks (
   stock_id    text primary key,
@@ -38,8 +38,8 @@ create table stocks (
 );
 
 comment on table stocks is '股票基本資料。stock_id 為證券代號，例如 2330。';
-comment on column stocks.market is 'FinMind TaiwanStockInfo 的 type 原始值：twse（上市）、tpex（上櫃）等。';
-comment on column stocks.industry is 'FinMind 的 industry_category 原始值。';
+comment on column stocks.market is '市場別代碼：twse（上市）、tpex（上櫃）等，原始值不轉中文。';
+comment on column stocks.industry is '產業別原始值（FinMind 來源為 industry_category）。';
 
 create trigger stocks_set_updated_at
   before update on stocks
@@ -48,8 +48,10 @@ create trigger stocks_set_updated_at
 -- ---------------------------------------------------------------
 -- daily_prices：日 K
 --
--- 對應 FinMind TaiwanStockPrice。注意該 dataset 的最高、最低價欄位
--- 叫 max / min，不是 high / low。
+-- 兩個來源都寫進這張表：
+--   證交所 MI_INDEX（每日收盤行情）
+--   FinMind TaiwanStockPrice（注意該 dataset 的最高低價欄位叫 max / min）
+-- 成交量一律存「股」，已由程式確認兩個來源的單位都是股。
 -- ---------------------------------------------------------------
 create table daily_prices (
   stock_id  text not null references stocks(stock_id) on delete cascade,
@@ -64,10 +66,10 @@ create table daily_prices (
 );
 
 comment on table daily_prices is '日 K 線。無成交日的開高低收可能為 0，資料照實存，計算指標前再由程式過濾（見 CLAUDE.md「已知的坑」）。';
-comment on column daily_prices.high is 'FinMind TaiwanStockPrice 的 max 欄位。';
-comment on column daily_prices.low is 'FinMind TaiwanStockPrice 的 min 欄位。';
-comment on column daily_prices.volume is '成交量，來自 Trading_Volume，單位為「股」。顯示成「張」時需 ÷1000。';
-comment on column daily_prices.turnover is '成交金額，來自 Trading_money，單位為「元」。';
+comment on column daily_prices.high is '最高價（FinMind 來源的欄位名稱是 max，不是 high）。';
+comment on column daily_prices.low is '最低價（FinMind 來源的欄位名稱是 min，不是 low）。';
+comment on column daily_prices.volume is '成交量，單位為「股」。顯示成「張」時需 ÷1000。';
+comment on column daily_prices.turnover is '成交金額，單位為「元」。';
 
 create index daily_prices_date_idx on daily_prices (date);
 
@@ -144,6 +146,9 @@ create index institutional_flows_date_idx on institutional_flows (date);
 
 -- ---------------------------------------------------------------
 -- margin：融資融券
+--
+-- ⚠️ 單位陷阱：證交所 MI_MARGN 報表的原始單位是「張」，與日 K 的「股」不同。
+-- 這張表一律存「股」，換算在程式端完成（src/lib/twse.js）。
 -- ---------------------------------------------------------------
 create table margin (
   stock_id        text not null references stocks(stock_id) on delete cascade,
@@ -154,10 +159,10 @@ create table margin (
 );
 
 comment on table margin is
-  '融資融券今日餘額，來自 FinMind TaiwanStockMarginPurchaseShortSale 的 '
-  'MarginPurchaseTodayBalance 與 ShortSaleTodayBalance。'
-  '單位：FinMind 官方文件未標示，抓到真實資料後必須跟證交所公告核對後再確定，'
-  '在核對完成前不要拿這兩個欄位做任何跨股票的比較或評分。';
+  '融資融券今日餘額，單位一律為「股」。'
+  '證交所 MI_MARGN 的原始單位是「張」，寫入前已由程式乘以 1000。'
+  'FinMind 來源的單位官方文件未標示，推測同為「張」但尚未查證，'
+  '若改用 FinMind 抓取，務必先跟證交所同一天同一檔的數字核對。';
 
 create index margin_date_idx on margin (date);
 

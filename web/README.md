@@ -98,7 +98,14 @@ TradingView 標示有出現、主控台沒有任何錯誤。
 
 ## 資料庫
 
-`supabase/migrations/0001_init.sql` 建立 6 張表：
+Migration 一律用遞增編號記錄，**已套用到資料庫的檔案不再修改**，
+有變更就新增下一號。
+
+- `0001_init.sql` 建立 6 張表與 RLS
+- `0002_fix_function_search_path.sql` 修正 Supabase 安全檢查指出的
+  函式 search_path 可變動問題
+
+`0001_init.sql` 建立 6 張表：
 `stocks`、`daily_prices`、`institutional_flows`、`margin`、`watchlist`、`data_fetch_log`。
 
 - 所有股數欄位單位一律是**股**，只在前端顯示時 ÷1000 換算成**張**。
