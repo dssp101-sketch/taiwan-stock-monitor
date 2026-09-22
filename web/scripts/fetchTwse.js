@@ -10,6 +10,7 @@
  *
  * 用法：
  *   node scripts/fetchTwse.js --check
+ *   node scripts/fetchTwse.js --check --date=2025-09-19   指定日期，方便跟證交所官網核對
  *   node scripts/fetchTwse.js --add=2330,2317
  *   node scripts/fetchTwse.js --mode=daily --days=7
  *   node scripts/fetchTwse.js --mode=backfill --years=3
@@ -31,11 +32,12 @@ const USER_AGENT = 'taiwan-stock-monitor/0.1 (personal use)'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function parseArgs(argv) {
-  const args = { mode: null, years: 3, days: 7, add: null, check: false }
+  const args = { mode: null, years: 3, days: 7, add: null, check: false, date: null }
   for (const raw of argv.slice(2)) {
     const [key, value] = raw.replace(/^--/, '').split('=')
     switch (key) {
       case 'check': args.check = true; break
+      case 'date': args.date = value; break
       case 'mode': args.mode = value; break
       case 'years': args.years = Number(value); break
       case 'days': args.days = Number(value); break
@@ -304,8 +306,20 @@ async function main() {
   if (args.check) {
     console.log('🔍 檢查模式（不會寫入任何資料）\n')
 
-    // 往回找最近一個有資料的交易日
-    for (const d of tradingDayCandidates(isoDate(new Date(Date.now() - 12 * 86400000)), isoDate(new Date())).reverse()) {
+    // 指定日期就只查那天，否則往回找最近一個有資料的交易日
+    const candidates = args.date
+      ? [args.date]
+      : tradingDayCandidates(isoDate(new Date(Date.now() - 12 * 86400000)), isoDate(new Date())).reverse()
+
+    if (args.date) {
+      console.log(`指定日期：${args.date}`)
+      console.log('可以拿下面的結果直接跟證交所官網同一天的頁面核對：')
+      console.log(`  每日收盤行情 https://www.twse.com.tw/zh/trading/historical/mi-index.html`)
+      console.log(`  三大法人     https://www.twse.com.tw/zh/trading/foreign/t86.html`)
+      console.log(`  融資融券     https://www.twse.com.tw/zh/trading/margin/mi-margn.html\n`)
+    }
+
+    for (const d of candidates) {
       const json = await twseGet(TWSE_ENDPOINTS.dailyQuotes, {
         date: toTwseDate(d), type: 'ALLBUT0999', response: 'json'
       })

@@ -154,11 +154,15 @@ TradingView 標示有出現、主控台沒有任何錯誤。
 
 `scripts/fetchFinMind.js`，由 GitHub Actions 每個交易日收盤後執行，也可以在本機手動跑。
 
+需要 Node.js 18 以上。
+
 ```bash
 cd web
+npm install
 
 # 證交所（不需要 Token）
-node scripts/fetchTwse.js --check
+npm run twse:check                       # 等同 node scripts/fetchTwse.js --check
+node scripts/fetchTwse.js --check --date=2025-09-19   # 指定日期，方便跟官網核對
 node scripts/fetchTwse.js --add=2330,2317,2454
 node scripts/fetchTwse.js --mode=backfill --years=3
 node scripts/fetchTwse.js --mode=daily --days=7
