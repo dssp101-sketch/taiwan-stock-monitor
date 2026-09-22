@@ -1,47 +1,71 @@
 <script setup>
+import { ref } from 'vue'
 import { isConfigured } from './lib/supabase.js'
+import StockPage from './pages/StockPage.vue'
+
+const stockId = ref('2330')
+const input = ref('2330')
+
+function submit() {
+  const v = input.value.trim()
+  if (v) stockId.value = v
+}
 </script>
 
 <template>
   <main class="wrap">
-    <h1>台股個人分析平台</h1>
-    <p class="sub">階段一骨架。目前尚未接上任何資料來源。</p>
+    <header class="top">
+      <h1>台股個人分析平台</h1>
+      <form class="search" @submit.prevent="submit">
+        <input v-model="input" placeholder="股票代號，例如 2330" aria-label="股票代號" />
+        <button type="submit">查詢</button>
+      </form>
+    </header>
 
-    <section class="card">
-      <h2>環境狀態</h2>
-      <p v-if="isConfigured">Supabase 連線參數已設定。</p>
-      <p v-else class="warn">
-        資料不足：尚未設定 <code>VITE_SUPABASE_URL</code> 與
-        <code>VITE_SUPABASE_ANON_KEY</code>，無法連線資料庫。
-      </p>
-    </section>
+    <p v-if="!isConfigured" class="warn">
+      尚未設定 <code>VITE_SUPABASE_URL</code> 與 <code>VITE_SUPABASE_ANON_KEY</code>，
+      目前無法讀取任何資料。畫面不會用模擬資料填補。
+    </p>
 
-    <footer>
-      <p class="note">
-        本頁不顯示任何模擬或亂數資料。資料不足時一律標示「資料不足」。
-      </p>
-    </footer>
+    <StockPage :stock-id="stockId" />
   </main>
 </template>
 
+<style>
+body {
+  margin: 0;
+  background: #ffffff;
+  font-family: system-ui, "Noto Sans TC", "PingFang TC", sans-serif;
+  color: #18181b;
+}
+</style>
+
 <style scoped>
-.wrap {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 2rem 1rem;
-  font-family: system-ui, "Noto Sans TC", sans-serif;
-  line-height: 1.6;
+.wrap { max-width: 960px; margin: 0 auto; padding: 1.5rem 1rem 3rem; line-height: 1.6; }
+.top { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+h1 { margin: 0; font-size: 1.35rem; }
+.search { display: flex; gap: 0.4rem; margin-left: auto; }
+input {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  font-size: 0.9rem;
 }
-h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
-.sub { color: #666; margin-top: 0; }
-.card {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-top: 1.5rem;
+button {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid #18181b;
+  border-radius: 6px;
+  background: #18181b;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
-.card h2 { font-size: 1rem; margin-top: 0; }
-.warn { color: #b45309; }
+.warn {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.85rem;
+}
 code { background: #f4f4f5; padding: 0.1rem 0.3rem; border-radius: 3px; }
-.note { color: #888; font-size: 0.85rem; margin-top: 2rem; }
 </style>

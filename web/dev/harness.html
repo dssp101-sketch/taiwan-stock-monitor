@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>元件視覺測試（開發用）</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 1.5rem;
+        background: #fff;
+        font-family: system-ui, "Noto Sans TC", sans-serif;
+        color: #18181b;
+      }
+      .harness { max-width: 900px; margin: 0 auto; }
+      .banner {
+        padding: 0.6rem 0.9rem;
+        margin-bottom: 1.25rem;
+        border: 2px solid #dc2626;
+        border-radius: 6px;
+        background: #fef2f2;
+        color: #991b1b;
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+      h2 {
+        margin: 1.75rem 0 0.5rem;
+        padding-bottom: 0.25rem;
+        border-bottom: 1px solid #e4e4e7;
+        font-size: 1rem;
+      }
+      .note { margin: 0.5rem 0; color: #71717a; font-size: 0.8rem; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./harness.js"></script>
+  </body>
+</html>

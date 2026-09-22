@@ -36,6 +36,43 @@ npm test                # 單元測試
 npm run build           # 產生 dist/
 ```
 
+## 畫面元件
+
+| 元件 | 內容 |
+|---|---|
+| `components/PriceChart.vue` | 主圖：K 線 + 均線（MA5/20/60）+ 成交量，成交量獨立一個 pane |
+| `components/IndicatorChart.vue` | 副圖：`type` 傳 `macd` / `kd` / `rsi`，附參考線（MACD 0 軸、KD 20/80、RSI 30/70） |
+| `components/InstitutionalTable.vue` | 三大法人近 N 日明細，股→張只在顯示時換算 |
+| `components/DataNotice.vue` | 資料不足／載入中／讀取失敗的統一提示 |
+| `pages/StockPage.vue` | 把上面組起來，從 Supabase 讀資料 |
+
+顏色依台股習慣：**紅漲綠跌**，與歐美相反。法人正數（買超）紅、負數（賣超）綠。
+
+資料不足時的行為：K 線缺開高低收的那筆直接跳過；指標算不出來的期間**不畫線也不補值**，
+線會從有資料的地方才開始；表格的格子顯示「—」而不是 0。
+
+圖表使用 TradingView lightweight-charts（Apache-2.0）。依授權要求，圖上開啟
+`attributionLogo`，個股頁下方另附版權標示與 tradingview.com 連結。
+
+### 元件視覺驗證
+
+`dev/` 底下是**開發專用**的視覺測試頁，用固定種子產生的測試序列檢查圖表畫不畫得出來。
+
+> ⚠️ `dev/fixture.js` 的資料**不是真實行情**，頁面上有明顯警告，而且
+> `vite build` 只編譯 `index.html`，這些檔案不會進入正式版打包結果。
+> 正式頁面的資料一律來自 Supabase，資料不足時顯示「資料不足」。
+
+```bash
+npm run dev                                    # 開發伺服器
+# 瀏覽器開 http://localhost:5173/dev/harness.html
+
+# 或用 Playwright 自動檢查並截圖
+node dev/screenshot.mjs out.png http://127.0.0.1:5173
+```
+
+截圖腳本會驗證：每個 canvas 都有實際尺寸、資料不足時顯示「資料不足」、
+TradingView 標示有出現、主控台沒有任何錯誤。
+
 ## 技術指標
 
 `src/indicators/` 底下每個指標都是純函式，不碰資料庫、不碰網路、不改動傳入的陣列。
