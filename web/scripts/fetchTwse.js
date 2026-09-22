@@ -374,20 +374,33 @@ async function verify(dateArg) {
       console.log('  ⚠️ 當日沒有收盤行情資料')
     } else {
       const prices = parseDailyQuotes(mi, day)
-      let ok = 0, bad = []
+      let ok = 0
+      const bad = []
       for (const p of prices) {
         if (!p.volume || !p.turnover || p.low === null || p.high === null) continue
         const avg = p.turnover / p.volume
-        // 容許 1% 誤差：零股交易與盤後定價會讓均價略微超出當日高低
+        // 容許 1% 誤差。鉅額交易的成交價可以偏離當日一般交易區間，
+        // 而且計入成交金額與股數卻不計入最高最低價，會讓均價略微超出區間。
         if (avg >= p.low * 0.99 && avg <= p.high * 1.01) ok++
-        else bad.push({ id: p.stock_id, avg, low: p.low, high: p.high })
+        else bad.push({ ...p, avg, deviation: avg < p.low ? avg / p.low - 1 : avg / p.high - 1 })
       }
       console.log(`  檢查 ${ok + bad.length} 檔`)
-      if (bad.length === 0) console.log('  ✅ 全部落在區間內')
-      else {
-        console.log(`  ⚠️ 有 ${bad.length} 檔落在區間外，前 5 筆：`)
+      if (bad.length === 0) {
+        console.log('  ✅ 全部落在區間內')
+      } else {
+        const ratio = bad.length / (ok + bad.length)
+        console.log(`  ⚠️ 有 ${bad.length} 檔落在區間外（占 ${(ratio * 100).toFixed(2)}%）`)
+        console.log('     少數幾檔通常是鉅額交易造成的（成交價可偏離區間，計入金額與股數卻不計入高低價）。')
+        console.log('     如果是大量出錯，才代表欄位對應有問題。詳細資料：')
         for (const b of bad.slice(0, 5)) {
-          console.log(`     ${b.id}：均價 ${b.avg.toFixed(2)}，區間 ${b.low}~${b.high}`)
+          console.log(`     ─ ${b.stock_id}`)
+          console.log(`       開 ${b.open} 高 ${b.high} 低 ${b.low} 收 ${b.close}`)
+          console.log(`       成交量 ${b.volume?.toLocaleString()} 股、成交金額 ${b.turnover?.toLocaleString()} 元`)
+          console.log(`       均價 ${b.avg.toFixed(4)}，偏離區間 ${(b.deviation * 100).toFixed(2)}%`)
+          console.log(`       官網明細 https://www.twse.com.tw/zh/trading/historical/stock-day.html （代號 ${b.stock_id}）`)
+        }
+        if (ratio > 0.05) {
+          console.log(`  ❌ 超過 5% 的股票對不上，這不像是鉅額交易，比較像欄位對應有問題。`)
         }
       }
     }
