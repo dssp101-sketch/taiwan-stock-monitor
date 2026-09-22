@@ -22,6 +22,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { loadEnv, reportEnv } from './loadEnv.js'
 import { watchlistHash } from './watchlistHash.js'
+import { describeFetchError } from './fetchError.js'
 import {
   TWSE_ENDPOINTS, buildUrl, toTwseDate, isOk,
   parseDailyQuotes, parseInstitutional, parseMargin,
@@ -34,6 +35,8 @@ const REQUEST_INTERVAL_MS = 3000
 const USER_AGENT = 'taiwan-stock-monitor/0.1 (personal use)'
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+
 
 function parseArgs(argv) {
   const args = { mode: null, years: 3, days: 7, add: null, check: false, verify: false, date: null }
