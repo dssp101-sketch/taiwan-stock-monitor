@@ -23,6 +23,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { loadEnv, reportEnv } from './loadEnv.js'
 import { mapStockInfo, mapPrice, mapMargin, pivotInstitutional } from '../src/lib/finmind.js'
 
 const FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
@@ -295,6 +296,7 @@ async function fetchRange(db, fm, { startDate, endDate }) {
 // ─────────────────────────── main ───────────────────────────
 
 async function main() {
+  const envResult = loadEnv()
   const args = parseArgs(process.argv)
 
   const token = requireEnv('FINMIND_TOKEN')
@@ -302,6 +304,8 @@ async function main() {
 
   if (args.check) {
     console.log('🔍 檢查模式（不會寫入任何資料）\n')
+    reportEnv(envResult)
+    console.log('')
     const usage = await fm.usage()
     if (usage) console.log(`FinMind 用量：${usage.used} / ${usage.limit}`)
     else console.log('⚠️  讀不到 FinMind 用量資訊（Token 可能無效）')
@@ -319,7 +323,8 @@ async function main() {
 
     // Supabase 還沒建好時也要能單獨驗證 FinMind，所以這段是選用的。
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.log('\n⏭️  尚未設定 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY，略過資料庫檢查。')
+      console.log('\n⏭️  略過資料庫檢查：缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY。')
+      console.log(`   請在 ${envResult.path} 補上這兩個變數。`)
       return
     }
     const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {

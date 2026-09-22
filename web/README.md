@@ -237,6 +237,23 @@ GitHub Actions 的 workflow_dispatch 可以選 `source`（`twse` 或 `finmind`�
 
 ## 環境變數
 
+### `.env` 怎麼被讀到
+
+**Node.js 不會自動讀 `.env`**——那是 Vite（前端）才有的行為。所以
+`scripts/loadEnv.js` 自己做了一個最小的讀取器，兩個抓資料腳本啟動時會呼叫它。
+
+規則：
+
+- **已存在的環境變數優先**。GitHub Actions 的 secrets 會直接設成環境變數，
+  不會被 repo 裡的 `.env` 蓋掉。
+- 支援 `#` 註解、值兩側的引號、Windows 換行、記事本存檔留下的 BOM。
+- 找不到 `.env` 時會印出它找過的完整路徑；若偵測到 `.env.txt`
+  （Windows 記事本常見的陷阱）會特別提示。
+
+`--check` 模式會印出實際讀到哪些變數。祕密只顯示開頭幾個字與長度，不印內容。
+
+
+
 | 變數 | 放哪裡 | 用途 |
 |---|---|---|
 | `VITE_SUPABASE_URL` | 前端（會進 bundle） | Supabase 專案網址，結尾不要加斜線 |

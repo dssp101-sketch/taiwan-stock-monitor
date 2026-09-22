@@ -20,6 +20,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
+import { loadEnv, reportEnv } from './loadEnv.js'
 import {
   TWSE_ENDPOINTS, buildUrl, toTwseDate, isOk,
   parseDailyQuotes, parseInstitutional, parseMargin,
@@ -414,6 +415,7 @@ async function verify(dateArg) {
 }
 
 async function main() {
+  const envResult = loadEnv()
   const args = parseArgs(process.argv)
 
   if (args.verify) {
@@ -423,6 +425,8 @@ async function main() {
 
   if (args.check) {
     console.log('🔍 檢查模式（不會寫入任何資料）\n')
+    reportEnv(envResult)
+    console.log('')
 
     // 指定日期就只查那天，否則往回找最近一個有資料的交易日
     const candidates = args.date
@@ -472,7 +476,8 @@ async function main() {
     }
 
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.log('\n⏭️  尚未設定 Supabase 環境變數，略過資料庫檢查。')
+      console.log('\n⏭️  略過資料庫檢查：缺少 SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY。')
+      console.log(`   請在 ${envResult.path} 補上這兩個變數。`)
       return
     }
     const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
