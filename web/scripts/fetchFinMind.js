@@ -317,8 +317,12 @@ async function main() {
       console.log('對應後：', JSON.stringify(mapPrice(probe[0])))
     }
 
-    const url = requireEnv('SUPABASE_URL')
-    const db = createClient(url, requireEnv('SUPABASE_SERVICE_ROLE_KEY'), {
+    // Supabase 還沒建好時也要能單獨驗證 FinMind，所以這段是選用的。
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.log('\n⏭️  尚未設定 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY，略過資料庫檢查。')
+      return
+    }
+    const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false }
     })
     const { count, error } = await db.from('watchlist').select('*', { count: 'exact', head: true })
