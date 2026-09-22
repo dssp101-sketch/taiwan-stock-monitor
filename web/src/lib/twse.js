@@ -212,6 +212,74 @@ export function parseInstitutional(json, isoDate) {
   return { rows: out, unknownShapes: [...unknownShapes] }
 }
 
+/**
+ * 取出證交所**公告的**淨額欄位。
+ *
+ * T86 同時公告各分項買賣股數與淨額合計。本專案的淨額一律由資料庫的計算欄位
+ * 自行算出（避免來源與計算不一致），所以 parseInstitutional() 不存這些欄位。
+ *
+ * 但正因為兩邊是獨立來源，就可以拿來互相驗證：
+ * **我從分項自己加出來的淨額，必須等於證交所公告的淨額。**
+ * 對不上就代表欄位位置抓錯了。這是 scripts/fetchTwse.js --verify 在做的事。
+ *
+ * @returns {Map<string, {foreign:number, trust:number, dealer:number, total:number}>}
+ *          key 是證券代號
+ */
+export function publishedInstitutionalNets(json) {
+  const out = new Map()
+  for (const row of json?.data ?? []) {
+    const [symbol, , ...v] = row
+    if (!looksLikeStockRow(symbol)) continue
+
+    let nets
+    if (v.length === 17) {
+      // 外資淨額 = 外資及陸資淨額 + 外資自營商淨額
+      const a = parseNumber(v[2])
+      const b = parseNumber(v[5])
+      nets = {
+        foreign: a === null || b === null ? null : a + b,
+        trust: parseNumber(v[8]),
+        dealer: parseNumber(v[9]),
+        total: parseNumber(v[16])
+      }
+    } else if (v.length === 14) {
+      nets = {
+        foreign: parseNumber(v[2]),
+        trust: parseNumber(v[5]),
+        dealer: parseNumber(v[6]),
+        total: parseNumber(v[13])
+      }
+    } else if (v.length === 10) {
+      nets = {
+        foreign: parseNumber(v[2]),
+        trust: parseNumber(v[5]),
+        dealer: parseNumber(v[8]),
+        total: parseNumber(v[9])
+      }
+    } else {
+      continue
+    }
+    out.set(String(symbol).trim(), nets)
+  }
+  return out
+}
+
+/**
+ * 從我解析出來的分項欄位算出淨額，算法與資料庫的計算欄位完全一致。
+ * 用來跟 publishedInstitutionalNets() 對照。
+ */
+export function computeNets(row) {
+  const n = (v) => (typeof v === 'number' ? v : 0)
+  const foreign =
+    n(row.foreign_investor_buy) + n(row.foreign_dealer_self_buy) -
+    n(row.foreign_investor_sell) - n(row.foreign_dealer_self_sell)
+  const trust = n(row.investment_trust_buy) - n(row.investment_trust_sell)
+  const dealer =
+    n(row.dealer_self_buy) + n(row.dealer_hedging_buy) + n(row.dealer_buy) -
+    n(row.dealer_self_sell) - n(row.dealer_hedging_sell) - n(row.dealer_sell)
+  return { foreign, trust, dealer, total: foreign + trust + dealer }
+}
+
 // ─────────────────────── 融資融券 ───────────────────────
 
 /**

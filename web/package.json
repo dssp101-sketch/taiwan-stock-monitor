@@ -13,7 +13,8 @@
     "twse:add": "node scripts/fetchTwse.js --add",
     "twse:daily": "node scripts/fetchTwse.js --mode=daily --days=7",
     "twse:backfill": "node scripts/fetchTwse.js --mode=backfill --years=3",
-    "finmind:check": "node scripts/fetchFinMind.js --check"
+    "finmind:check": "node scripts/fetchFinMind.js --check",
+    "twse:verify": "node scripts/fetchTwse.js --verify"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",

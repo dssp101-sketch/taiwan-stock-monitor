@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseNumber, parseDailyQuotes, parseInstitutional, parseMargin,
-  findTable, isOk, toTwseDate, buildUrl, TWSE_ENDPOINTS
+  findTable, isOk, toTwseDate, buildUrl, TWSE_ENDPOINTS,
+  publishedInstitutionalNets, computeNets
 } from '../src/lib/twse.js'
 
 describe('parseNumber', () => {
@@ -272,5 +273,63 @@ describe('parseMargin', () => {
 
   it('找不到表時回傳空陣列', () => {
     expect(parseMargin({ tables: [] }, '2025-09-19')).toEqual([])
+  })
+})
+
+describe('對帳：自己算的淨額 vs 證交所公告的淨額', () => {
+  // 台積電 2023-01-30 證交所實際公告，同時含各分項與淨額欄位
+  const tsmc2023 = [
+    '2330', '台積電',
+    '133,236,588', '52,595,539', '80,641,049',
+    '0', '0', '0',
+    '1,032,000', '94,327', '937,673',
+    '880,408',
+    '978,000', '537,000', '441,000',
+    '1,227,511', '788,103', '439,408',
+    '82,459,130'
+  ]
+
+  it('取出證交所公告的淨額欄位', () => {
+    const nets = publishedInstitutionalNets({ data: [tsmc2023] })
+    expect(nets.get('2330')).toEqual({
+      foreign: 80641049,  // 外資及陸資 + 外資自營商
+      trust: 937673,
+      dealer: 880408,
+      total: 82459130
+    })
+  })
+
+  it('從分項算出的淨額，與證交所公告的淨額完全相同', () => {
+    const { rows } = parseInstitutional({ data: [tsmc2023] }, '2023-01-30')
+    const mine = computeNets(rows[0])
+    const published = publishedInstitutionalNets({ data: [tsmc2023] }).get('2330')
+    expect(mine).toEqual(published)
+  })
+
+  it('欄位位置抓錯時對帳會失敗（確認這個檢查真的有效）', () => {
+    // 故意把自營商的買進換成外資自營商的位置，模擬子字串比對抓錯的經典 bug
+    const broken = { ...parseInstitutional({ data: [tsmc2023] }, '2023-01-30').rows[0] }
+    broken.dealer_self_buy = broken.foreign_dealer_self_buy // 0
+    const published = publishedInstitutionalNets({ data: [tsmc2023] }).get('2330')
+    expect(computeNets(broken)).not.toEqual(published)
+  })
+
+  it('14 欄與 10 欄格式也取得到公告淨額', () => {
+    const r14 = ['2330', '台積電', '100', '40', '60', '20', '5', '15', '7',
+                 '10', '5', '5', '4', '2', '2', '82']
+    expect(publishedInstitutionalNets({ data: [r14] }).get('2330')).toEqual({
+      foreign: 60, trust: 15, dealer: 7, total: 82
+    })
+
+    const r10 = ['2330', '台積電', '100', '40', '60', '20', '5', '15', '9', '3', '6', '81']
+    expect(publishedInstitutionalNets({ data: [r10] }).get('2330')).toEqual({
+      foreign: 60, trust: 15, dealer: 6, total: 81
+    })
+  })
+
+  it('computeNets 把缺值當成 0 參與加總，不會回傳 NaN', () => {
+    expect(computeNets({ foreign_investor_buy: 100 })).toEqual({
+      foreign: 100, trust: 0, dealer: 0, total: 100
+    })
   })
 })

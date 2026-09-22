@@ -142,6 +142,25 @@ TradingView 標示有出現、主控台沒有任何錯誤。
 所以 `findTable()` 不寫死索引，也不是取第一個符合的，而是挑「第一列第一格
 看起來像證券代號」的那張表。
 
+### 自動對帳（--verify）
+
+證交所的 T86 同時公告各分項買賣股數**和**淨額合計。本專案的淨額一律由資料庫的
+計算欄位自行算出，所以這兩邊是獨立來源，可以互相驗證：
+
+```bash
+npm run twse:verify
+node scripts/fetchTwse.js --verify --date=2025-09-19
+```
+
+兩組檢查，**全市場每一檔都查，不是抽樣**：
+
+1. **三大法人**：從各分項加出來的淨額，必須等於證交所公告的淨額欄位。
+   欄位位置只要抓錯一個就會對不上。
+2. **每日收盤行情**：成交金額 ÷ 成交量 必須落在當日最低價與最高價之間。
+   能抓出成交量單位搞錯（股／張）之類的問題。
+
+對帳失敗時 exit code 為 1，可以直接放進 CI。
+
 ### 回補注意事項
 
 證交所的端點是「一次給全市場一天」，所以回補 3 年要跑約 730 個交易日 ×
@@ -161,7 +180,8 @@ cd web
 npm install
 
 # 證交所（不需要 Token）
-npm run twse:check                       # 等同 node scripts/fetchTwse.js --check
+npm run twse:check                       # 看某一天的解析結果
+npm run twse:verify                      # 跟證交所公告的數字自動對帳
 node scripts/fetchTwse.js --check --date=2025-09-19   # 指定日期，方便跟官網核對
 node scripts/fetchTwse.js --add=2330,2317,2454
 node scripts/fetchTwse.js --mode=backfill --years=3

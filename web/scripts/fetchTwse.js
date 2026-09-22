@@ -11,6 +11,7 @@
  * 用法：
  *   node scripts/fetchTwse.js --check
  *   node scripts/fetchTwse.js --check --date=2025-09-19   指定日期，方便跟證交所官網核對
+ *   node scripts/fetchTwse.js --verify                    拿全市場資料跟證交所公告的數字自動對帳
  *   node scripts/fetchTwse.js --add=2330,2317
  *   node scripts/fetchTwse.js --mode=daily --days=7
  *   node scripts/fetchTwse.js --mode=backfill --years=3
@@ -21,7 +22,8 @@
 import { createClient } from '@supabase/supabase-js'
 import {
   TWSE_ENDPOINTS, buildUrl, toTwseDate, isOk,
-  parseDailyQuotes, parseInstitutional, parseMargin
+  parseDailyQuotes, parseInstitutional, parseMargin,
+  publishedInstitutionalNets, computeNets
 } from '../src/lib/twse.js'
 
 // 證交所沒有公告流量上限，但短時間內密集請求會被擋。保守一點，
@@ -32,11 +34,12 @@ const USER_AGENT = 'taiwan-stock-monitor/0.1 (personal use)'
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 function parseArgs(argv) {
-  const args = { mode: null, years: 3, days: 7, add: null, check: false, date: null }
+  const args = { mode: null, years: 3, days: 7, add: null, check: false, verify: false, date: null }
   for (const raw of argv.slice(2)) {
     const [key, value] = raw.replace(/^--/, '').split('=')
     switch (key) {
       case 'check': args.check = true; break
+      case 'verify': args.verify = true; break
       case 'date': args.date = value; break
       case 'mode': args.mode = value; break
       case 'years': args.years = Number(value); break
@@ -300,8 +303,110 @@ async function fetchRange(db, { startDate, endDate }) {
   if (failed > 0) console.log('失敗的日期已記錄在 data_fetch_log，再跑一次就會自動重試。')
 }
 
+/**
+ * 對帳：拿全市場的資料跟證交所**自己公告的數字**核對。
+ *
+ * 兩組獨立的檢查：
+ *   1. 三大法人：我從各分項加出來的淨額，必須等於證交所公告的淨額欄位。
+ *      欄位位置只要抓錯一個，數字就會對不上。
+ *   2. 每日收盤行情：成交金額 ÷ 成交量 必須落在當日最低價與最高價之間。
+ *      這能抓出成交量單位搞錯（股／張）之類的問題。
+ *
+ * 這不是抽樣，是**全市場每一檔都檢查**。
+ */
+async function verify(dateArg) {
+  console.log('🔍 對帳模式：跟證交所公告的數字核對（不會寫入任何資料）\n')
+
+  const candidates = dateArg
+    ? [dateArg]
+    : tradingDayCandidates(isoDate(new Date(Date.now() - 12 * 86400000)), isoDate(new Date())).reverse()
+
+  for (const day of candidates) {
+    const t86 = await twseGet(TWSE_ENDPOINTS.institutional, {
+      date: toTwseDate(day), selectType: 'ALLBUT0999', response: 'json'
+    })
+    if (!isOk(t86)) {
+      console.log(`${day}：${t86?.stat ?? '無資料'}`)
+      continue
+    }
+
+    console.log(`日期：${day}\n`)
+
+    // ── 檢查一：三大法人淨額 ──
+    const { rows, unknownShapes } = parseInstitutional(t86, day)
+    const published = publishedInstitutionalNets(t86)
+
+    let checked = 0
+    const mismatches = []
+    for (const row of rows) {
+      const pub = published.get(row.stock_id)
+      if (!pub) continue
+      checked++
+      const mine = computeNets(row)
+      for (const key of ['foreign', 'trust', 'dealer', 'total']) {
+        if (pub[key] === null) continue
+        if (mine[key] !== pub[key]) {
+          mismatches.push({ stock_id: row.stock_id, key, mine: mine[key], published: pub[key] })
+        }
+      }
+    }
+
+    console.log('【檢查一】三大法人：我算的淨額 vs 證交所公告的淨額')
+    console.log(`  檢查 ${checked} 檔 × 4 個淨額欄位 = ${checked * 4} 項`)
+    if (unknownShapes.length) {
+      console.log(`  ⚠️ 出現沒看過的欄位數量：${unknownShapes.join('、')}`)
+    }
+    if (mismatches.length === 0) {
+      console.log('  ✅ 全部一致')
+    } else {
+      console.log(`  ❌ 有 ${mismatches.length} 項對不上，前 10 筆：`)
+      for (const m of mismatches.slice(0, 10)) {
+        console.log(`     ${m.stock_id} ${m.key}：我算 ${m.mine.toLocaleString()}、公告 ${m.published.toLocaleString()}`)
+      }
+    }
+
+    // ── 檢查二：量價一致性 ──
+    const mi = await twseGet(TWSE_ENDPOINTS.dailyQuotes, {
+      date: toTwseDate(day), type: 'ALLBUT0999', response: 'json'
+    })
+    console.log('\n【檢查二】每日收盤行情：成交金額 ÷ 成交量 是否落在當日高低價之間')
+    if (!isOk(mi)) {
+      console.log('  ⚠️ 當日沒有收盤行情資料')
+    } else {
+      const prices = parseDailyQuotes(mi, day)
+      let ok = 0, bad = []
+      for (const p of prices) {
+        if (!p.volume || !p.turnover || p.low === null || p.high === null) continue
+        const avg = p.turnover / p.volume
+        // 容許 1% 誤差：零股交易與盤後定價會讓均價略微超出當日高低
+        if (avg >= p.low * 0.99 && avg <= p.high * 1.01) ok++
+        else bad.push({ id: p.stock_id, avg, low: p.low, high: p.high })
+      }
+      console.log(`  檢查 ${ok + bad.length} 檔`)
+      if (bad.length === 0) console.log('  ✅ 全部落在區間內')
+      else {
+        console.log(`  ⚠️ 有 ${bad.length} 檔落在區間外，前 5 筆：`)
+        for (const b of bad.slice(0, 5)) {
+          console.log(`     ${b.id}：均價 ${b.avg.toFixed(2)}，區間 ${b.low}~${b.high}`)
+        }
+      }
+    }
+
+    const pass = mismatches.length === 0
+    console.log(`\n${pass ? '✅ 對帳通過：欄位對應與計算方式跟證交所公告完全一致。' : '❌ 對帳失敗：欄位對應有問題，請把上面的輸出貼回來。'}`)
+    return pass
+  }
+  console.log('找不到有資料的交易日。')
+  return false
+}
+
 async function main() {
   const args = parseArgs(process.argv)
+
+  if (args.verify) {
+    const pass = await verify(args.date)
+    process.exit(pass ? 0 : 1)
+  }
 
   if (args.check) {
     console.log('🔍 檢查模式（不會寫入任何資料）\n')
