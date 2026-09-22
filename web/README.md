@@ -104,6 +104,8 @@ Migration 一律用遞增編號記錄，**已套用到資料庫的檔案不再�
 - `0001_init.sql` 建立 6 張表與 RLS
 - `0002_fix_function_search_path.sql` 修正 Supabase 安全檢查指出的
   函式 search_path 可變動問題
+- `0003_fetch_log_watchlist_hash.sql` 為 `data_fetch_log` 加上追蹤池雜湊，
+  避免追蹤池變動後新股票缺歷史資料
 
 `0001_init.sql` 建立 6 張表：
 `stocks`、`daily_prices`、`institutional_flows`、`margin`、`watchlist`、`data_fetch_log`。
@@ -175,6 +177,15 @@ node scripts/fetchTwse.js --verify --date=2025-09-19
 
 腳本會先讀 `data_fetch_log`，**跳過先前已成功的日期**，所以中斷後再跑一次
 就會接續，不會從頭來過。
+
+⚠️ **請先把追蹤池一次加齊，再執行回補。**
+
+接續紀錄會連同「當時追蹤池內容的雜湊」一起存。追蹤池一變動雜湊就不同，
+那些日期會被重新抓取——這是刻意的：證交所一次只給全市場一天，
+新加入的股票必須重新走一遍日期才補得到歷史資料。
+
+如果沒有這個機制，先用 3 檔回補完、之後再加 2 檔重跑，所有日期都會被當成
+已完成而跳過，新加的兩檔會永遠缺歷史資料，而且不會有任何錯誤訊息。
 
 ## 抓資料腳本
 

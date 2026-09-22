@@ -21,6 +21,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { loadEnv, reportEnv } from './loadEnv.js'
+import { watchlistHash } from './watchlistHash.js'
 import {
   TWSE_ENDPOINTS, buildUrl, toTwseDate, isOk,
   parseDailyQuotes, parseInstitutional, parseMargin,
@@ -137,8 +138,13 @@ async function log(db, entry) {
   if (error) console.error(`⚠️  寫入 data_fetch_log 失敗：${error.message}`)
 }
 
-/** 已經成功抓過的 (dataset, date)，用來中斷後接續，不重複打證交所。 */
-async function alreadyDone(db, datasets, startDate, endDate) {
+/**
+ * 已經成功抓過的 (dataset, date)，用來中斷後接續，不重複打證交所。
+ *
+ * 只採計「追蹤池雜湊相同」的紀錄。追蹤池一變動雜湊就不同，
+ * 那些日期會被重新抓取，新加入的股票才補得到歷史資料。
+ */
+async function alreadyDone(db, datasets, startDate, endDate, hash) {
   const done = new Set()
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
@@ -147,6 +153,7 @@ async function alreadyDone(db, datasets, startDate, endDate) {
       .select('dataset, target_date, status')
       .in('dataset', datasets)
       .eq('status', 'success')
+      .eq('watchlist_hash', hash)
       .gte('target_date', startDate)
       .lte('target_date', endDate)
       .range(from, from + PAGE - 1)
@@ -231,6 +238,9 @@ async function addToWatchlist(db, stockIds) {
   await upsert(db, 'stocks', found, 'stock_id')
   await upsert(db, 'watchlist', found.map((s) => ({ stock_id: s.stock_id })), 'stock_id')
   for (const s of found) console.log(`   ✅ ${s.stock_id} ${s.name}`)
+  console.log('\n📌 追蹤池變動後，回補的接續紀錄會失效（這是刻意的）。')
+  console.log('   證交所一次只給全市場一天，新加入的股票必須重新走一遍日期才補得到歷史資料。')
+  console.log('   所以請先把追蹤池一次加齊，再執行回補。')
 }
 
 async function fetchRange(db, { startDate, endDate }) {
@@ -242,13 +252,15 @@ async function fetchRange(db, { startDate, endDate }) {
   }
 
   const tracked = new Set(watchlist.map((w) => w.stock_id))
+  const hash = watchlistHash([...tracked])
   const days = tradingDayCandidates(startDate, endDate)
-  const done = await alreadyDone(db, DATASETS.map((d) => d.name), startDate, endDate)
+  const done = await alreadyDone(db, DATASETS.map((d) => d.name), startDate, endDate, hash)
 
   const totalTasks = days.length * DATASETS.length
   console.log(`\n📈 追蹤池 ${tracked.size} 檔，區間 ${startDate} ~ ${endDate}`)
   console.log(`   共 ${days.length} 個可能的交易日 × ${DATASETS.length} 個資料集 = ${totalTasks} 次請求`)
-  console.log(`   其中 ${done.size} 次先前已成功，這次會跳過`)
+  console.log(`   追蹤池雜湊 ${hash}`)
+  console.log(`   其中 ${done.size} 次先前已用同樣的追蹤池成功抓過，這次會跳過`)
   console.log(`   節流 ${REQUEST_INTERVAL_MS}ms／次，預估還要 ${Math.ceil((totalTasks - done.size) * REQUEST_INTERVAL_MS / 60000)} 分鐘\n`)
 
   let ok = 0, skipped = 0, failed = 0
@@ -264,7 +276,7 @@ async function fetchRange(db, { startDate, endDate }) {
         console.error(`   ❌ ${day} ${spec.label}：${err.message}`)
         await log(db, {
           dataset: spec.name, target_date: day, status: 'failed',
-          row_count: 0, message: err.message.slice(0, 500)
+          row_count: 0, message: err.message.slice(0, 500), watchlist_hash: hash
         })
         failed++
         continue
@@ -274,7 +286,7 @@ async function fetchRange(db, { startDate, endDate }) {
       if (!isOk(json)) {
         await log(db, {
           dataset: spec.name, target_date: day, status: 'skipped',
-          row_count: 0, message: String(json?.stat ?? '').slice(0, 500)
+          row_count: 0, message: String(json?.stat ?? '').slice(0, 500), watchlist_hash: hash
         })
         skipped++
         continue
@@ -290,7 +302,8 @@ async function fetchRange(db, { startDate, endDate }) {
       await log(db, {
         dataset: spec.name, target_date: day,
         status: 'success', row_count: written,
-        message: notes.join('；').slice(0, 500) || null
+        message: notes.join('；').slice(0, 500) || null,
+        watchlist_hash: hash
       })
       ok++
 
