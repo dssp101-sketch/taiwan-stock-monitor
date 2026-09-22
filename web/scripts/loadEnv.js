@@ -69,6 +69,44 @@ export function loadEnv(envPath) {
   return { path, exists: true, applied, hint: null }
 }
 
+/**
+ * 判斷這串金鑰是哪一種。
+ *
+ * Supabase 有兩類金鑰，長得很像但權限天差地遠，填錯是很常見的失誤：
+ *   - publishable / anon：公開金鑰，受 RLS 限制，設計上就會被打包進前端
+ *   - secret / service_role：繞過所有 RLS，只能放伺服器端
+ *
+ * 新版金鑰看前綴就知道；舊版是 JWT，要解開 payload 看 role 欄位。
+ *
+ * @returns {{kind:'secret'|'public'|'unknown', detail:string}}
+ */
+export function classifyKey(key) {
+  if (typeof key !== 'string' || key === '') return { kind: 'unknown', detail: '空值' }
+
+  if (key.startsWith('sb_secret_')) return { kind: 'secret', detail: 'secret key（新版）' }
+  if (key.startsWith('sb_publishable_')) {
+    return { kind: 'public', detail: 'publishable key（新版公開金鑰）' }
+  }
+
+  // 舊版是 JWT：header.payload.signature，payload 是 base64url 的 JSON
+  if (key.startsWith('eyJ')) {
+    const parts = key.split('.')
+    if (parts.length === 3) {
+      try {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'))
+        const role = payload?.role
+        if (role === 'service_role') return { kind: 'secret', detail: 'service_role JWT（舊版）' }
+        if (role) return { kind: 'public', detail: `${role} JWT（舊版）` }
+      } catch {
+        // 解不開就當成未知，不要因為診斷而讓程式中斷
+      }
+    }
+    return { kind: 'unknown', detail: 'JWT，但讀不出 role' }
+  }
+
+  return { kind: 'unknown', detail: '無法辨識的格式' }
+}
+
 /** 在 --check 模式印出診斷，方便使用者自己找出哪裡沒設好。 */
 export function reportEnv(result) {
   if (!result.exists) {
@@ -88,7 +126,14 @@ export function reportEnv(result) {
       console.log(`   ✅ ${key} = ${v}${trailing}`)
     } else {
       // 祕密只顯示開頭與長度，不印出內容
-      console.log(`   ✅ ${key} = ${v.slice(0, 11)}…（共 ${v.length} 字）`)
+      const { kind, detail } = classifyKey(v)
+      const mark = kind === 'secret' ? '✅' : kind === 'public' ? '❌' : '⚠️'
+      console.log(`   ${mark} ${key} = ${v.slice(0, 11)}…（共 ${v.length} 字，${detail}）`)
+      if (kind === 'public') {
+        console.log('      這是「公開金鑰」，不是 service_role。公開金鑰受 RLS 限制，寫不進資料庫。')
+        console.log('      請到 Supabase 後台的 API Keys 頁面，複製標示 secret / service_role 的那一把。')
+        console.log('      正確的金鑰會以 sb_secret_ 開頭，或是一長串以 eyJ 開頭的 JWT。')
+      }
     }
   }
 }

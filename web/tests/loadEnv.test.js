@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { loadEnv } from '../scripts/loadEnv.js'
+import { loadEnv, classifyKey } from '../scripts/loadEnv.js'
 
 let dir
 const KEYS = ['T_URL', 'T_SECRET', 'T_QUOTED', 'T_EMPTY', 'T_EQ', 'SUPABASE_URL']
@@ -87,3 +87,40 @@ describe('loadEnv', () => {
     expect(process.env.T_EMPTY).toBe('')
   })
 })
+
+describe('classifyKey：分辨公開金鑰與 service_role', () => {
+  it('新版 secret key', () => {
+    expect(classifyKey('sb_secret_abcdefghijklmnop').kind).toBe('secret')
+  })
+
+  it('新版 publishable key 被判為公開金鑰', () => {
+    // 使用者實際填錯的情況：把這把填進 SUPABASE_SERVICE_ROLE_KEY
+    expect(classifyKey('sb_publishable_wvq9BYSTNnrMBCVmdIupYg_LCR44cih').kind).toBe('public')
+  })
+
+  it('舊版 service_role JWT', () => {
+    const jwt = makeJwt({ iss: 'supabase', role: 'service_role' })
+    const r = classifyKey(jwt)
+    expect(r.kind).toBe('secret')
+    expect(r.detail).toContain('service_role')
+  })
+
+  it('舊版 anon JWT 被判為公開金鑰', () => {
+    expect(classifyKey(makeJwt({ iss: 'supabase', role: 'anon' })).kind).toBe('public')
+  })
+
+  it('空值與亂填的字串判為 unknown，不會丟錯', () => {
+    expect(classifyKey('').kind).toBe('unknown')
+    expect(classifyKey(null).kind).toBe('unknown')
+    expect(classifyKey('隨便打的東西').kind).toBe('unknown')
+  })
+
+  it('格式壞掉的 JWT 不會讓程式中斷', () => {
+    expect(classifyKey('eyJbroken.notbase64!!!.sig').kind).toBe('unknown')
+  })
+})
+
+function makeJwt(payload) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  return `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64(payload)}.fakesignature`
+}

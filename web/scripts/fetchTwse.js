@@ -484,8 +484,15 @@ async function main() {
       auth: { persistSession: false }
     })
     const { count, error } = await db.from('watchlist').select('*', { count: 'exact', head: true })
-    if (error) console.log(`⚠️  Supabase 連線失敗：${error.message}`)
-    else console.log(`Supabase 連線正常，追蹤池目前 ${count} 檔`)
+    if (error) {
+      // PostgREST 在權限不足時可能回傳空的 message，所以把所有欄位都印出來
+      const parts = [error.message, error.code && `code=${error.code}`, error.details, error.hint]
+        .filter(Boolean)
+      console.log(`⚠️  Supabase 連線失敗：${parts.join(' / ') || '（伺服器沒有回傳錯誤訊息）'}`)
+      console.log('   最常見的原因是 SUPABASE_SERVICE_ROLE_KEY 填成了公開金鑰，請看上面的金鑰診斷。')
+    } else {
+      console.log(`✅ Supabase 連線正常，追蹤池目前 ${count} 檔`)
+    }
     return
   }
 
