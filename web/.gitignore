@@ -7,3 +7,8 @@ dist
 # 根目錄的 .gitignore 是 Python 版本，裡面的 venv 規則 `lib/` 會連帶把
 # web/src/lib/ 一起忽略掉。這裡明確救回來。
 !src/lib/
+
+# 抓下來的資料（追蹤清單、股價）。目前這個 repo 是公開的，
+# 資料一旦 commit 進來任何人都看得到，所以先排除。
+# 搬到私有 repo 之後要把這行拿掉，GitHub Actions 才能把每日資料 commit 回去。
+public/data/
