@@ -90,12 +90,13 @@ describe('loadEnv', () => {
 
 describe('classifyKey：分辨公開金鑰與 service_role', () => {
   it('新版 secret key', () => {
-    expect(classifyKey('sb_secret_abcdefghijklmnop').kind).toBe('secret')
+    expect(classifyKey('sb_secret_FAKE_FOR_TESTS_ONLY').kind).toBe('secret')
   })
 
   it('新版 publishable key 被判為公開金鑰', () => {
-    // 使用者實際填錯的情況：把這把填進 SUPABASE_SERVICE_ROLE_KEY
-    expect(classifyKey('sb_publishable_wvq9BYSTNnrMBCVmdIupYg_LCR44cih').kind).toBe('public')
+    // 使用者實際遇過的情況：把公開金鑰填進 SUPABASE_SERVICE_ROLE_KEY。
+    // 注意：測試裡一律用明顯的假值，絕不貼真實金鑰（見 tests/noSecrets.test.js）。
+    expect(classifyKey('sb_publishable_FAKE_FOR_TESTS_ONLY').kind).toBe('public')
   })
 
   it('舊版 service_role JWT', () => {
