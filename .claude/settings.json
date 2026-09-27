@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "playwright-skill": {
+      "source": {
+        "source": "github",
+        "repo": "lackeyjb/playwright-skill"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "playwright-skill@playwright-skill": true
+  }
+}
